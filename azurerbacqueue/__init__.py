@@ -46,9 +46,7 @@ def get_graph_api_token():
 
 def main(msg: func.ServiceBusMessage):
     # debugging start the function
-    logging.info(
-        "-------------------------------------------------------------------------------------"
-    )
+    logging.info("-------------------------------------------------------------")
     logging.info(f"******* Generating weekly Azure rbac report *******")
     logging.info(
         f"Subscription Name: {(subscription := msg.get_body().decode('utf-8').split(','))[0]}"
@@ -64,17 +62,13 @@ def main(msg: func.ServiceBusMessage):
         "Authorization": f"Bearer {get_graph_api_token()}",
         "Host": "graph.microsoft.com",
     }
-    logging.info(
-        "-------------------------------------------------------------------------------------"
-    )
+    logging.info("-------------------------------------------------------------")
     logging.info(f"******* Completed constructing API headers *******")
 
     # constructing rbacs and upns
     rest_api_url = f"https://management.azure.com/subscriptions/{subscription[1]}/providers/Microsoft.Authorization/roleAssignments?api-version=2015-07-01"
     rbacs = requests.get(url=rest_api_url, headers=rest_api_headers).json()["value"]
-    logging.info(
-        "-------------------------------------------------------------------------------------"
-    )
+    logging.info("-------------------------------------------------------------")
     logging.info(f"******* Completed constructing RBACs *******")
 
     # constructing return UPNs and adding EXT upns to AAD Guest RBAC Review
@@ -109,9 +103,7 @@ def main(msg: func.ServiceBusMessage):
                 file_data := f"Subscription Name: {subscription[0]}\nSubscription Id: {subscription[1]}\nUPNs:\n{upns}\n\n\n\n"
             )
         )
-        logging.info(
-            "-------------------------------------------------------------------------------------"
-        )
+        logging.info("-------------------------------------------------------------")
         logging.info(f"******* Completed constructing UPNs *******")
 
         # appending blob
@@ -125,7 +117,5 @@ def main(msg: func.ServiceBusMessage):
 
     except Exception as e:
         logging.info(str(e))
-    logging.info(
-        "-------------------------------------------------------------------------------------"
-    )
+    logging.info("-------------------------------------------------------------")
     logging.info(f"******* Completed appending blob *******")
