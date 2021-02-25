@@ -104,7 +104,7 @@ def main(msg: func.ServiceBusMessage):
         file_data = "\n".join(
             subscription[0]
             + f",{'Passthrough (Customer Self-Managed)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] != 'Cenitex' else 'Passthrough (Cenitex Owned)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] == 'Cenitex' else '25% (Cenitex Managed)' if azure_bill_table[subscription[0]][0] == 1.25 else '43.75% (Viccloudsafe Kofax)'}"
-            + f",{azure_bill_table[subscription[0]][1]},{azure_bill_table[subscription[0]][3]},{azure_bill_table[subscription[0]][4]},{azure_bill_table[subscription[0]][5]},{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName']},"
+            + f",{azure_bill_table[subscription[0]][1]},{azure_bill_table[subscription[0]][3]},{azure_bill_table[subscription[0]][4]},{azure_bill_table[subscription[0]][5]},{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName'].replace(',', '')},"
             + requests.get(
                 url=f"https://management.azure.com{rbac['properties']['roleDefinitionId']}?api-version=2015-07-01",
                 headers=rest_api_headers,
