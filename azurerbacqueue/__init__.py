@@ -101,34 +101,62 @@ def main(msg: func.ServiceBusMessage):
 
     # constructing return UPNs and adding EXT upns to AAD Guest RBAC Review
     try:
-        file_data = "\n".join(
-            subscription[0]
-            + f",{'Passthrough (Customer Self-Managed)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] != 'Cenitex' else 'Passthrough (Cenitex Owned)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] == 'Cenitex' else '25% (Cenitex Managed)' if azure_bill_table[subscription[0]][0] == 1.25 else '43.75% (Viccloudsafe Kofax)'}"
-            + f",{azure_bill_table[subscription[0]][1]},{azure_bill_table[subscription[0]][3]},{azure_bill_table[subscription[0]][4]},{azure_bill_table[subscription[0]][5]},{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName'].replace(',', '')},"
-            + requests.get(
-                url=f"https://management.azure.com{rbac['properties']['roleDefinitionId']}?api-version=2015-07-01",
-                headers=rest_api_headers,
-            ).json()["properties"]["roleName"]
-            + ","
-            + str(
-                requests.post(
-                    url="https://graph.microsoft.com/v1.0/groups/c6f8666e-053a-4f09-a15c-6feee253af06/members/$ref",
-                    headers=graph_api_headers,
-                    json={
-                        "@odata.id": f"https://graph.microsoft.com/v1.0/directoryObjects/{rbac['properties']['principalId']}"
-                    },
-                ).status_code
-            )
-            for rbac in rbacs
-            if (
-                response := requests.get(
-                    url=f"https://graph.microsoft.com/v1.0/users/{rbac['properties']['principalId']}",
-                    headers=graph_api_headers,
+        if subscription[0] in azure_bill_table:
+            file_data = "\n".join(
+                subscription[0]
+                + f",{'Passthrough (Customer Self-Managed)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] != 'Cenitex' else 'Passthrough (Cenitex Owned)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] == 'Cenitex' else '25% (Cenitex Managed)' if azure_bill_table[subscription[0]][0] == 1.25 else '43.75% (Viccloudsafe Kofax)'}"
+                + f",{azure_bill_table[subscription[0]][1]},{azure_bill_table[subscription[0]][3]},{azure_bill_table[subscription[0]][4]},{azure_bill_table[subscription[0]][5]},{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName'].replace(',', '')},"
+                + requests.get(
+                    url=f"https://management.azure.com{rbac['properties']['roleDefinitionId']}?api-version=2015-07-01",
+                    headers=rest_api_headers,
+                ).json()["properties"]["roleName"]
+                + ","
+                + str(
+                    requests.post(
+                        url="https://graph.microsoft.com/v1.0/groups/c6f8666e-053a-4f09-a15c-6feee253af06/members/$ref",
+                        headers=graph_api_headers,
+                        json={
+                            "@odata.id": f"https://graph.microsoft.com/v1.0/directoryObjects/{rbac['properties']['principalId']}"
+                        },
+                    ).status_code
                 )
-            ).status_code
-            == 200
-            and "#EXT#" in response.json()["userPrincipalName"]
-        )
+                for rbac in rbacs
+                if (
+                    response := requests.get(
+                        url=f"https://graph.microsoft.com/v1.0/users/{rbac['properties']['principalId']}",
+                        headers=graph_api_headers,
+                    )
+                ).status_code
+                == 200
+                and "#EXT#" in response.json()["userPrincipalName"]
+            )
+        else:
+            file_data = "\n".join(
+                f"{subscription[0]},,,,,,{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName'].replace(',', '')},"
+                + requests.get(
+                    url=f"https://management.azure.com{rbac['properties']['roleDefinitionId']}?api-version=2015-07-01",
+                    headers=rest_api_headers,
+                ).json()["properties"]["roleName"]
+                + ","
+                + str(
+                    requests.post(
+                        url="https://graph.microsoft.com/v1.0/groups/c6f8666e-053a-4f09-a15c-6feee253af06/members/$ref",
+                        headers=graph_api_headers,
+                        json={
+                            "@odata.id": f"https://graph.microsoft.com/v1.0/directoryObjects/{rbac['properties']['principalId']}"
+                        },
+                    ).status_code
+                )
+                for rbac in rbacs
+                if (
+                    response := requests.get(
+                        url=f"https://graph.microsoft.com/v1.0/users/{rbac['properties']['principalId']}",
+                        headers=graph_api_headers,
+                    )
+                ).status_code
+                == 200
+                and "#EXT#" in response.json()["userPrincipalName"]
+            )
         logging.info(file_data)
         logging.info("-------------------------------------------------------------")
         logging.info(f"******* Completed constructing UPNs *******")
