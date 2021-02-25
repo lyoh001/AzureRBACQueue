@@ -6,42 +6,69 @@ import requests
 from azure.storage.blob import BlobServiceClient
 
 
-def get_rest_api_token():
-    try:
-        oauth2_headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        oauth2_body = {
-            "client_id": os.environ["REST_CLIENT_ID"],
-            "client_secret": os.environ["REST_CLIENT_SECRET"],
-            "grant_type": "client_credentials",
-            "resource": "https://management.azure.com",
-        }
-        oauth2_url = (
-            f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}/oauth2/token"
-        )
-        return requests.post(
-            url=oauth2_url, headers=oauth2_headers, data=oauth2_body
-        ).json()["access_token"]
-
-    except Exception as e:
-        logging.info(str(e))
-
-
 def get_graph_api_token():
+    oauth2_headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    oauth2_body = {
+        "client_id": os.environ["GRAPH_CLIENT_ID"],
+        "client_secret": os.environ["GRAPH_CLIENT_SECRET"],
+        "grant_type": "client_credentials",
+        "scope": "https://graph.microsoft.com/.default",
+    }
+    oauth2_url = (
+        f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}/oauth2/v2.0/token"
+    )
     try:
-        oauth2_headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        oauth2_body = {
-            "client_id": os.environ["GRAPH_CLIENT_ID"],
-            "client_secret": os.environ["GRAPH_CLIENT_SECRET"],
-            "grant_type": "client_credentials",
-            "scope": "https://graph.microsoft.com/.default",
-        }
-        oauth2_url = f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}/oauth2/v2.0/token"
         return requests.post(
             url=oauth2_url, headers=oauth2_headers, data=oauth2_body
         ).json()["access_token"]
 
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
+
+
+def get_rest_api_token():
+    oauth2_headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    oauth2_body = {
+        "client_id": os.environ["REST_CLIENT_ID"],
+        "client_secret": os.environ["REST_CLIENT_SECRET"],
+        "grant_type": "client_credentials",
+        "resource": "https://management.azure.com",
+    }
+    oauth2_url = (
+        f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}/oauth2/token"
+    )
+    try:
+        return requests.post(
+            url=oauth2_url, headers=oauth2_headers, data=oauth2_body
+        ).json()["access_token"]
+
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
+
+
+def get_azure_bill_table():
+    try:
+        blob_service_client = BlobServiceClient.from_connection_string(
+            os.environ["AZBILL_STORAGE_ACCOUNT_CONNECTION_STRING"]
+        )
+        blob_client = blob_service_client.get_blob_client(
+            "azurebilltable", "azurebilltable.csv"
+        )
+        return {
+            (col := row.split(","))[0]: [
+                float(col[1]),
+                col[2],
+                col[3],
+                col[4],
+                col[5],
+                col[6],
+            ]
+            for row in blob_client.download_blob()
+            .content_as_text(encoding="UTF-8")
+            .splitlines()[1:]
+        }
     except Exception as e:
-        logging.info(str(e))
+        print(f"{e}")
 
 
 def main(msg: func.ServiceBusMessage):
@@ -62,6 +89,7 @@ def main(msg: func.ServiceBusMessage):
         "Authorization": f"Bearer {get_graph_api_token()}",
         "Host": "graph.microsoft.com",
     }
+    azure_bill_table = get_azure_bill_table()
     logging.info("-------------------------------------------------------------")
     logging.info(f"******* Completed constructing API headers *******")
 
@@ -73,12 +101,15 @@ def main(msg: func.ServiceBusMessage):
 
     # constructing return UPNs and adding EXT upns to AAD Guest RBAC Review
     try:
-        upns = "\n".join(
-            requests.get(
+        file_data = "\n".join(
+            subscription[0]
+            + f",{'Passthrough (Customer Self-Managed)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] != 'Cenitex' else 'Passthrough (Cenitex Owned)' if azure_bill_table[subscription[0]][0] == 1.0 and azure_bill_table[subscription[0]][1] == 'Cenitex' else '25% (Cenitex Managed)' if azure_bill_table[subscription[0]][0] == 1.25 else '43.75% (Viccloudsafe Kofax)'}"
+            + f",{azure_bill_table[subscription[0]][1]},{azure_bill_table[subscription[0]][3]},{azure_bill_table[subscription[0]][4]},{azure_bill_table[subscription[0]][5]},{response.json()['userPrincipalName'].split('#')[0]},{response.json()['displayName']},"
+            + requests.get(
                 url=f"https://management.azure.com{rbac['properties']['roleDefinitionId']}?api-version=2015-07-01",
                 headers=rest_api_headers,
             ).json()["properties"]["roleName"]
-            + f" Role: {response.json()['userPrincipalName']} has been added to AAD Guest RBAC Review. "
+            + ","
             + str(
                 requests.post(
                     url="https://graph.microsoft.com/v1.0/groups/c6f8666e-053a-4f09-a15c-6feee253af06/members/$ref",
@@ -98,22 +129,19 @@ def main(msg: func.ServiceBusMessage):
             == 200
             and "#EXT#" in response.json()["userPrincipalName"]
         )
-        logging.info(
-            (
-                file_data := f"Subscription Name: {subscription[0]}\nSubscription Id: {subscription[1]}\nUPNs:\n{upns}\n\n\n\n"
-            )
-        )
+        logging.info(file_data)
         logging.info("-------------------------------------------------------------")
         logging.info(f"******* Completed constructing UPNs *******")
+    except requests.exceptions.RequestException as e:
+        raise SystemExit(e)
 
-        # appending blob
-        blob_service_client = BlobServiceClient.from_connection_string(
-            os.environ["AZURERBAC_STORAGE_ACCOUNT_CONNECTION_STRING"]
-        )
-        blob_client = blob_service_client.get_blob_client(
-            "rbacreport", "rbac_report.csv"
-        )
-        blob_client.append_block(file_data)
+    # appending blob
+    blob_service_client = BlobServiceClient.from_connection_string(
+        os.environ["AZURERBAC_STORAGE_ACCOUNT_CONNECTION_STRING"]
+    )
+    blob_client = blob_service_client.get_blob_client("rbacreport", "rbac_report.csv")
+    try:
+        blob_client.append_block(f"{file_data}\n")
 
     except Exception as e:
         logging.info(str(e))
